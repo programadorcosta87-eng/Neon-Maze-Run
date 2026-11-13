@@ -2,11 +2,6 @@
 
 🎮 **Neon Maze Run** é um minigame original de labirinto com estética arcade retrô, criado com **HTML, CSS e JavaScript puro**.
 
-## Jogar online
-
-🚀 **Versão hospedada na Netlify:**
-
-https://neon-make-run.netlify.app
 
 ## Recursos
 
@@ -73,9 +68,6 @@ Para uma experiência mais próxima da hospedagem, também é possível servir o
 - Web Audio API
 - localStorage
 
-## Hospedagem
-
-O projeto está publicado na **Netlify** e conectado ao repositório para facilitar novas atualizações.
 
 ---
 
