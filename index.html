@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+  <meta name="theme-color" content="#08111f" />
+  <title>Neon Maze Run</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <main class="app" aria-label="Neon Maze Run">
+    <section id="startScreen" class="screen active">
+      <div class="logo-orb">◉</div>
+      <h1>NEON MAZE RUN</h1>
+      <p class="subtitle">Colete os fragmentos. Fuja dos Caçadores. Domine o labirinto.</p>
+      <div class="menu-buttons">
+        <button id="playBtn" class="primary">Jogar</button>
+        <button id="howBtn" class="secondary">Como Jogar</button>
+      </div>
+      <button id="soundStart" class="icon-btn" aria-label="Alternar som">🔊 Som</button>
+    </section>
+
+    <section id="howScreen" class="screen panel-screen">
+      <h2>Como Jogar</h2>
+      <div class="how-card">
+        <p><b>Objetivo:</b> colete todos os fragmentos luminosos para abrir a próxima fase.</p>
+        <p><b>Perigo:</b> os Caçadores perseguem você. Cada contato custa uma vida.</p>
+        <p><b>Energia:</b> pegue os Núcleos especiais para desativar os Caçadores por alguns segundos.</p>
+        <p><b>Controles:</b> use as setas do teclado, deslize na área do jogo ou toque nos botões.</p>
+      </div>
+      <button id="backBtn" class="secondary">Voltar</button>
+    </section>
+
+    <section id="gameScreen" class="game-screen">
+      <header class="hud">
+        <div><span class="hud-label">PONTOS</span><strong id="score">0</strong></div>
+        <div><span class="hud-label">VIDAS</span><strong id="lives">●●●</strong></div>
+        <div><span class="hud-label">FASE</span><strong id="level">1</strong></div>
+        <div class="hud-actions">
+          <button id="soundBtn" class="icon-btn small" aria-label="Som">🔊</button>
+          <button id="pauseBtn" class="icon-btn small" aria-label="Pausar">Ⅱ</button>
+          <button id="restartBtn" class="icon-btn small" aria-label="Reiniciar">↻</button>
+        </div>
+      </header>
+
+      <div id="gameWrap" class="game-wrap">
+        <canvas id="game" width="640" height="640" aria-label="Área do jogo"></canvas>
+        <div id="countdown" class="overlay-message hidden"></div>
+        <div id="pauseOverlay" class="overlay-card hidden"><h2>Pausado</h2><button id="resumeBtn" class="primary">Continuar</button></div>
+      </div>
+
+      <div class="touch-controls" aria-label="Controles touch">
+        <button data-dir="up" class="dpad up">▲</button>
+        <button data-dir="left" class="dpad left">◀</button>
+        <button data-dir="down" class="dpad down">▼</button>
+        <button data-dir="right" class="dpad right">▶</button>
+      </div>
+      <p class="swipe-hint">Deslize sobre o jogo ou use os controles</p>
+    </section>
+
+    <section id="gameOver" class="screen panel-screen">
+      <div class="gameover-icon">✦</div>
+      <h2>GAME OVER</h2>
+      <div class="result-grid">
+        <div><span>Seu resultado</span><strong id="finalScore">0</strong></div>
+        <div><span>Recorde</span><strong id="highScore">0</strong></div>
+      </div>
+      <button id="againBtn" class="primary">Jogar novamente</button>
+      <button id="menuBtn" class="secondary">Menu inicial</button>
+    </section>
+  </main>
+  <script src="game.js"></script>
+</body>
+</html>
