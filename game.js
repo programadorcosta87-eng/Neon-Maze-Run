@@ -69,7 +69,10 @@
 #...########################...#
 ################################`
   ];
-  let grid=[],player,enemies=[],score=0,lives=3,level=1,running=false,paused=false,poweredUntil=0,last=0,high=Number(localStorage.getItem('neonMazeHigh')||0),soundOn=localStorage.getItem('neonMazeSound')!=='off',spawnTimer=0;
+  const safeGet=(key,fallback=null)=>{try{return localStorage.getItem(key)??fallback}catch(e){return fallback}};
+  const safeSet=(key,value)=>{try{localStorage.setItem(key,value)}catch(e){}};
+  let countdownTimer=null,levelTimer=null;
+  let grid=[],player,enemies=[],score=0,lives=3,level=1,running=false,paused=false,poweredUntil=0,last=0,high=Number(safeGet('neonMazeHigh','0'))||0,soundOn=safeGet('neonMazeSound','on')!=='off',spawnTimer=0;
   const dirs={up:{x:0,y:-1},down:{x:0,y:1},left:{x:-1,y:0},right:{x:1,y:0}};
   let audioCtx;
   function beep(freq,dur=.07,type='sine',vol=.04){if(!soundOn)return;try{audioCtx??=new (window.AudioContext||window.webkitAudioContext)();const o=audioCtx.createOscillator(),g=audioCtx.createGain();o.type=type;o.frequency.value=freq;g.gain.value=vol;o.connect(g).connect(audioCtx.destination);o.start();g.gain.exponentialRampToValueAtTime(.001,audioCtx.currentTime+dur);o.stop(audioCtx.currentTime+dur)}catch(e){}}
@@ -85,9 +88,29 @@
   function remaining(){let n=0;for(const row of grid)for(const c of row)if(c==='.'||c==='o')n++;return n}
   function enemyTarget(e){if(e.mode==='wander')return {x:1+Math.floor(Math.random()*(COLS-2)),y:1+Math.floor(Math.random()*(ROWS-2))};if(e.mode==='ambush')return {x:player.x+player.dir.x*4,y:player.y+player.dir.y*4};return {x:player.x,y:player.y}}
   function chooseEnemyDir(e){let opts=[];for(const d of Object.values(dirs)){let nx=e.x+d.x,ny=e.y+d.y;if(!cellOpen(nx,ny))continue;if(d.x===-e.dir.x&&d.y===-e.dir.y)continue;opts.push(d)}if(!opts.length)opts=Object.values(dirs).filter(d=>cellOpen(e.x+d.x,e.y+d.y));if(!opts.length)return;let t=enemyTarget(e);if(performance.now()<poweredUntil){opts.sort(()=>Math.random()-.5);e.dir=opts[0];return}opts.sort((a,b)=>Math.hypot(e.x+a.x-t.x,e.y+a.y-t.y)-Math.hypot(e.x+b.x-t.x,e.y+b.y-t.y));e.dir=(e.mode==='wander'&&Math.random()<.45)?opts[Math.floor(Math.random()*opts.length)]:opts[0]}
-  function nextLevel(){running=false;score+=500;level++;beep(880,.12,'triangle',.06);setTimeout(()=>{loadLevel();countdownStart()},650)}
+  function clearPendingTimers(){
+    if(countdownTimer){clearInterval(countdownTimer);countdownTimer=null}
+    if(levelTimer){clearTimeout(levelTimer);levelTimer=null}
+  }
+  function nextLevel(){
+    if(!running)return;
+    running=false;
+    clearPendingTimers();
+    score+=500;
+    level++;
+    beep(880,.12,'triangle',.06);
+    levelTimer=setTimeout(()=>{levelTimer=null;loadLevel();countdownStart()},650);
+  }
   function loseLife(){if(spawnTimer>0)return;lives--;beep(90,.35,'sawtooth',.08);particles(player.x,player.y,'#ff4fa3',28);if(lives<=0){running=false;finishGame();return}spawnTimer=2.2;player.progress=0;enemies.forEach(e=>{e.x=e.px=e.homeX;e.y=e.py=e.homeY;e.progress=0});}
-  function finishGame(){if(score>high){high=score;localStorage.setItem('neonMazeHigh',high)}$('finalScore').textContent=score;$('highScore').textContent=high;setScreen('over');beep(55,.7,'sawtooth',.07)}
+  function finishGame(){
+    clearPendingTimers();
+    $('pauseOverlay').classList.add('hidden');
+    if(score>high){high=score;safeSet('neonMazeHigh',high)}
+    $('finalScore').textContent=score;
+    $('highScore').textContent=high;
+    setScreen('over');
+    beep(55,.7,'sawtooth',.07);
+  }
   const sparks=[];function particles(x,y,color,n=8){for(let i=0;i<n;i++)sparks.push({x:x+.5,y:y+.5,vx:(Math.random()-.5)*5,vy:(Math.random()-.5)*5,life:.35+Math.random()*.5,color})}
   function update(dt){if(!running||paused)return;if(spawnTimer>0){spawnTimer-=dt;return}choosePlayerDir();moveActor(player,dt,true);enemies.forEach(e=>moveActor(e,dt));for(let i=enemies.length-1;i>=0;i--){let e=enemies[i],d=Math.hypot((e.x+e.progress*e.dir.x)-(player.x+player.progress*player.dir.x),(e.y+e.progress*e.dir.y)-(player.y+player.progress*player.dir.y));if(d<.68){if(performance.now()<poweredUntil){score+=200;particles(e.x,e.y,'#ffe76a',18);e.x=e.px=e.homeX;e.y=e.py=e.homeY;e.progress=0;beep(360,.08,'square',.05)}else loseLife()}}
     for(let i=sparks.length-1;i>=0;i--){let p=sparks[i];p.x+=p.vx*dt;p.y+=p.vy*dt;p.life-=dt;if(p.life<=0)sparks.splice(i,1)}
@@ -99,14 +122,46 @@
     $('score').textContent=score;$('lives').textContent='●'.repeat(Math.max(0,lives));$('level').textContent=level;
   }
   function loop(t){let dt=Math.min(.04,(t-last)/1000||0);last=t;update(dt);draw();requestAnimationFrame(loop)}requestAnimationFrame(loop);
-  function countdownStart(){setScreen('game');paused=false;running=false;let n=3,el=$('countdown');el.classList.remove('hidden');el.textContent=n;let timer=setInterval(()=>{n--;if(n>0){el.textContent=n;beep(520,.05,'square',.03)}else{clearInterval(timer);el.classList.add('hidden');running=true;beep(760,.1,'triangle',.05)}},700)}
-  function startGame(){score=0;lives=3;level=1;poweredUntil=0;loadLevel();countdownStart()}
+  function countdownStart(){
+    clearPendingTimers();
+    setScreen('game');
+    paused=false;
+    running=false;
+    $('pauseOverlay').classList.add('hidden');
+    $('pauseBtn').textContent='Ⅱ';
+    let n=3,el=$('countdown');
+    el.classList.remove('hidden');
+    el.textContent=n;
+    countdownTimer=setInterval(()=>{
+      n--;
+      if(n>0){
+        el.textContent=n;
+        beep(520,.05,'square',.03);
+      }else{
+        clearInterval(countdownTimer);
+        countdownTimer=null;
+        el.classList.add('hidden');
+        running=true;
+        beep(760,.1,'triangle',.05);
+      }
+    },700);
+  }
+  function startGame(){
+    clearPendingTimers();
+    score=0;
+    lives=3;
+    level=1;
+    poweredUntil=0;
+    spawnTimer=0;
+    loadLevel();
+    countdownStart();
+  }
   function setDir(name){if(dirs[name])player.next=dirs[name]}
-  $('playBtn').onclick=startGame;$('againBtn').onclick=startGame;$('menuBtn').onclick=()=>setScreen('start');$('howBtn').onclick=()=>setScreen('how');$('backBtn').onclick=()=>setScreen('start');$('restartBtn').onclick=startGame;$('pauseBtn').onclick=togglePause;$('resumeBtn').onclick=togglePause;
+  $('playBtn').onclick=startGame;$('againBtn').onclick=startGame;$('menuBtn').onclick=()=>{clearPendingTimers();running=false;paused=false;$('pauseOverlay').classList.add('hidden');setScreen('start')};$('howBtn').onclick=()=>setScreen('how');$('backBtn').onclick=()=>setScreen('start');$('restartBtn').onclick=startGame;$('pauseBtn').onclick=togglePause;$('resumeBtn').onclick=togglePause;
   function togglePause(){if(!screens.game.classList.contains('active'))return;paused=!paused;$('pauseOverlay').classList.toggle('hidden',!paused);$('pauseBtn').textContent=paused?'▶':'Ⅱ'}
   document.querySelectorAll('[data-dir]').forEach(b=>b.addEventListener('pointerdown',e=>{e.preventDefault();setDir(b.dataset.dir)}));
   document.addEventListener('keydown',e=>{let k={ArrowUp:'up',w:'up',ArrowDown:'down',s:'down',ArrowLeft:'left',a:'left',ArrowRight:'right',d:'right'}[e.key];if(k){e.preventDefault();setDir(k)}if(e.key===' '){e.preventDefault();togglePause()}});
   let sx=0,sy=0;$('gameWrap').addEventListener('pointerdown',e=>{sx=e.clientX;sy=e.clientY});$('gameWrap').addEventListener('pointerup',e=>{let dx=e.clientX-sx,dy=e.clientY-sy;if(Math.hypot(dx,dy)<18)return;if(Math.abs(dx)>Math.abs(dy))setDir(dx>0?'right':'left');else setDir(dy>0?'down':'up')});
-  function syncSound(){let txt=soundOn?'🔊':'🔇';$('soundBtn').textContent=txt;$('soundStart').textContent=`${txt} Som`;localStorage.setItem('neonMazeSound',soundOn?'on':'off')}$('soundBtn').onclick=()=>{soundOn=!soundOn;syncSound()};$('soundStart').onclick=()=>{soundOn=!soundOn;syncSound()};syncSound();
+  function syncSound(){let txt=soundOn?'🔊':'🔇';$('soundBtn').textContent=txt;$('soundStart').textContent=`${txt} Som`;safeSet('neonMazeSound',soundOn?'on':'off')}$('soundBtn').onclick=()=>{soundOn=!soundOn;syncSound()};$('soundStart').onclick=()=>{soundOn=!soundOn;syncSound()};syncSound();
   loadLevel();draw();
 })();
