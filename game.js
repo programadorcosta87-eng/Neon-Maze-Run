@@ -112,8 +112,31 @@
     mazeCtx.fillStyle='#050b17';
     mazeCtx.fillRect(x*TILE,y*TILE,TILE,TILE);
   }
-  function loadLevel(){grid=normalizeMap(maps[(level-1)%maps.length]); collectiblesLeft=0;for(const row of grid)for(const c of row)if(c==='.'||c==='o')collectiblesLeft++; buildMazeLayer(); player={x:16,y:24,dir:dirs.left,next:dirs.left,px:16,py:24,progress:0,speed:7.4+Math.min(level,8)*.25,moving:false,stopAfterTile:false}; if(grid[player.y]?.[player.x]==='#'){for(let y=1;y<ROWS-1;y++)for(let x=1;x<COLS-1;x++)if(grid[y][x]!=='#'){player.x=player.px=x;player.y=player.py=y;y=ROWS;break}}
-    enemies=[{x:16,y:15,px:16,py:15,dir:dirs.left,progress:0,speed:4.5+level*.18,color:'#ff4fa3',mode:'chase',homeX:16,homeY:15},{x:14,y:15,px:14,py:15,dir:dirs.up,progress:0,speed:4.2+level*.16,color:'#9b7bff',mode:'ambush',homeX:14,homeY:15},{x:18,y:15,px:18,py:15,dir:dirs.right,progress:0,speed:4+level*.18,color:'#ffb44f',mode:'wander',homeX:18,homeY:15}];
+  function loadLevel(){
+    grid=normalizeMap(maps[(level-1)%maps.length]);
+    collectiblesLeft=0;
+    for(const row of grid)for(const c of row)if(c==='.'||c==='o')collectiblesLeft++;
+    buildMazeLayer();
+
+    const difficulty=Math.min(level-1,24);
+    const nearestOpen=(sx,sy)=>{
+      if(cellOpen(sx,sy))return {x:sx,y:sy};
+      for(let r=1;r<Math.max(COLS,ROWS);r++)for(let y=Math.max(1,sy-r);y<=Math.min(ROWS-2,sy+r);y++)for(let x=Math.max(1,sx-r);x<=Math.min(COLS-2,sx+r);x++)if(cellOpen(x,y))return {x,y};
+      return {x:1,y:1};
+    };
+    const p=nearestOpen(16,24);
+    player={x:p.x,y:p.y,dir:dirs.left,next:dirs.left,px:p.x,py:p.y,progress:0,speed:7.4+difficulty*.10,moving:false,stopAfterTile:false};
+
+    const makeEnemy=(x,y,dir,color,mode,baseSpeed)=>{
+      const pos=nearestOpen(x,y);
+      return {x:pos.x,y:pos.y,px:pos.x,py:pos.y,dir:dirs[dir],progress:0,speed:baseSpeed+difficulty*.10,color,mode,homeX:pos.x,homeY:pos.y,wanderTarget:null};
+    };
+    enemies=[
+      makeEnemy(16,15,'left','#ff4fa3','chase',4.25),
+      makeEnemy(14,15,'up','#9b7bff','ambush',4.05),
+      makeEnemy(18,15,'right','#ffb44f','wander',3.90)
+    ];
+    enemies.forEach(chooseEnemyDir);
   }
   function cellOpen(x,y){return grid[y]&&grid[y][x]!==undefined&&grid[y][x]!=='#'}
   function choosePlayerDir(){
@@ -134,12 +157,27 @@
     }
   }
   function moveEnemy(a,dt){
+    // Escolhe uma rota antes de andar quando está exatamente em uma célula.
+    // Isso elimina o estado em que o Caçador ficava parado contra uma parede.
+    if(a.progress===0 && !cellOpen(a.x+a.dir.x,a.y+a.dir.y))chooseEnemyDir(a,true);
+
     a.progress+=a.speed*dt;
     while(a.progress>=1){
       a.progress-=1;
-      const nx=a.x+a.dir.x,ny=a.y+a.dir.y;
-      if(cellOpen(nx,ny)){a.px=a.x;a.py=a.y;a.x=nx;a.y=ny}else{a.progress=0;break}
-      chooseEnemyDir(a);
+      let nx=a.x+a.dir.x,ny=a.y+a.dir.y;
+      if(!cellOpen(nx,ny)){
+        chooseEnemyDir(a,true);
+        nx=a.x+a.dir.x; ny=a.y+a.dir.y;
+      }
+      if(!cellOpen(nx,ny)){
+        // Recuperação de segurança: nunca mantém um inimigo congelado.
+        const fallback=Object.values(dirs).find(d=>cellOpen(a.x+d.x,a.y+d.y));
+        if(!fallback){a.progress=0;return}
+        a.dir=fallback;
+        nx=a.x+a.dir.x; ny=a.y+a.dir.y;
+      }
+      a.px=a.x;a.py=a.y;a.x=nx;a.y=ny;
+      chooseEnemyDir(a,false);
     }
   }
   function collect(){
@@ -161,8 +199,44 @@
       if(collectiblesLeft<=0)nextLevel();
     }
   }
-  function enemyTarget(e){if(e.mode==='wander')return {x:1+Math.floor(Math.random()*(COLS-2)),y:1+Math.floor(Math.random()*(ROWS-2))};if(e.mode==='ambush')return {x:player.x+player.dir.x*4,y:player.y+player.dir.y*4};return {x:player.x,y:player.y}}
-  function chooseEnemyDir(e){let opts=[];for(const d of Object.values(dirs)){let nx=e.x+d.x,ny=e.y+d.y;if(!cellOpen(nx,ny))continue;if(d.x===-e.dir.x&&d.y===-e.dir.y)continue;opts.push(d)}if(!opts.length)opts=Object.values(dirs).filter(d=>cellOpen(e.x+d.x,e.y+d.y));if(!opts.length)return;let t=enemyTarget(e);if(performance.now()<poweredUntil){opts.sort(()=>Math.random()-.5);e.dir=opts[0];return}opts.sort((a,b)=>Math.hypot(e.x+a.x-t.x,e.y+a.y-t.y)-Math.hypot(e.x+b.x-t.x,e.y+b.y-t.y));e.dir=(e.mode==='wander'&&Math.random()<.45)?opts[Math.floor(Math.random()*opts.length)]:opts[0]}
+  function enemyTarget(e){
+    if(e.mode==='wander'){
+      if(!e.wanderTarget || (e.x===e.wanderTarget.x&&e.y===e.wanderTarget.y) || Math.random()<.08){
+        const open=[];
+        for(let y=1;y<ROWS-1;y++)for(let x=1;x<COLS-1;x++)if(cellOpen(x,y))open.push({x,y});
+        e.wanderTarget=open[Math.floor(Math.random()*open.length)]||{x:player.x,y:player.y};
+      }
+      return e.wanderTarget;
+    }
+    if(e.mode==='ambush')return {x:player.x+player.dir.x*4,y:player.y+player.dir.y*4};
+    return {x:player.x,y:player.y};
+  }
+  function chooseEnemyDir(e,force=false){
+    const all=Object.values(dirs).filter(d=>cellOpen(e.x+d.x,e.y+d.y));
+    if(!all.length)return;
+    const forward=all.filter(d=>d.x!==-e.dir.x||d.y!==-e.dir.y);
+    let opts=forward.length?forward:all;
+    const target=enemyTarget(e);
+
+    if(performance.now()<poweredUntil){
+      // Sob energia, fogem do jogador em vez de perseguir.
+      opts.sort((a,b)=>Math.hypot(e.x+b.x-player.x,e.y+b.y-player.y)-Math.hypot(e.x+a.x-player.x,e.y+a.y-player.y));
+      e.dir=opts[0];
+      return;
+    }
+
+    if(e.mode==='wander' && !force && Math.random()<.30){
+      e.dir=opts[Math.floor(Math.random()*opts.length)];
+      return;
+    }
+
+    opts.sort((a,b)=>{
+      const da=Math.hypot(e.x+a.x-target.x,e.y+a.y-target.y);
+      const db=Math.hypot(e.x+b.x-target.x,e.y+b.y-target.y);
+      return da-db;
+    });
+    e.dir=opts[0];
+  }
   function clearPendingTimers(){
     if(countdownTimer){clearInterval(countdownTimer);countdownTimer=null}
     if(levelTimer){clearTimeout(levelTimer);levelTimer=null}
