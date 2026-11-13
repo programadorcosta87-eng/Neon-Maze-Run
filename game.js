@@ -112,12 +112,36 @@
     mazeCtx.fillStyle='#050b17';
     mazeCtx.fillRect(x*TILE,y*TILE,TILE,TILE);
   }
-  function loadLevel(){grid=normalizeMap(maps[(level-1)%maps.length]); collectiblesLeft=0;for(const row of grid)for(const c of row)if(c==='.'||c==='o')collectiblesLeft++; buildMazeLayer(); player={x:16,y:24,dir:dirs.left,next:dirs.left,px:16,py:24,progress:0,speed:7.4+Math.min(level,8)*.25}; if(grid[player.y]?.[player.x]==='#'){for(let y=1;y<ROWS-1;y++)for(let x=1;x<COLS-1;x++)if(grid[y][x]!=='#'){player.x=player.px=x;player.y=player.py=y;y=ROWS;break}}
+  function loadLevel(){grid=normalizeMap(maps[(level-1)%maps.length]); collectiblesLeft=0;for(const row of grid)for(const c of row)if(c==='.'||c==='o')collectiblesLeft++; buildMazeLayer(); player={x:16,y:24,dir:dirs.left,next:dirs.left,px:16,py:24,progress:0,speed:7.4+Math.min(level,8)*.25,moving:false,stopAfterTile:false}; if(grid[player.y]?.[player.x]==='#'){for(let y=1;y<ROWS-1;y++)for(let x=1;x<COLS-1;x++)if(grid[y][x]!=='#'){player.x=player.px=x;player.y=player.py=y;y=ROWS;break}}
     enemies=[{x:16,y:15,px:16,py:15,dir:dirs.left,progress:0,speed:4.5+level*.18,color:'#ff4fa3',mode:'chase',homeX:16,homeY:15},{x:14,y:15,px:14,py:15,dir:dirs.up,progress:0,speed:4.2+level*.16,color:'#9b7bff',mode:'ambush',homeX:14,homeY:15},{x:18,y:15,px:18,py:15,dir:dirs.right,progress:0,speed:4+level*.18,color:'#ffb44f',mode:'wander',homeX:18,homeY:15}];
   }
   function cellOpen(x,y){return grid[y]&&grid[y][x]!==undefined&&grid[y][x]!=='#'}
-  function choosePlayerDir(){if(player.progress===0&&cellOpen(player.x+player.next.x,player.y+player.next.y))player.dir=player.next}
-  function moveActor(a,dt,isPlayer=false){a.progress+=a.speed*dt;while(a.progress>=1){a.progress-=1;let nx=a.x+a.dir.x,ny=a.y+a.dir.y;if(cellOpen(nx,ny)){a.px=a.x;a.py=a.y;a.x=nx;a.y=ny}else{a.progress=0;break}if(isPlayer){choosePlayerDir();collect()}else chooseEnemyDir(a)}}
+  function choosePlayerDir(){
+    if(player.progress!==0)return;
+    if(cellOpen(player.x+player.next.x,player.y+player.next.y))player.dir=player.next;
+  }
+  function movePlayer(dt){
+    if(!player.moving && player.progress===0)return;
+    player.progress+=player.speed*dt;
+    while(player.progress>=1){
+      player.progress-=1;
+      const nx=player.x+player.dir.x,ny=player.y+player.dir.y;
+      if(!cellOpen(nx,ny)){player.progress=0;player.moving=false;break}
+      player.px=player.x;player.py=player.y;player.x=nx;player.y=ny;
+      collect();
+      if(player.stopAfterTile){player.progress=0;player.moving=false;player.stopAfterTile=false;break}
+      choosePlayerDir();
+    }
+  }
+  function moveEnemy(a,dt){
+    a.progress+=a.speed*dt;
+    while(a.progress>=1){
+      a.progress-=1;
+      const nx=a.x+a.dir.x,ny=a.y+a.dir.y;
+      if(cellOpen(nx,ny)){a.px=a.x;a.py=a.y;a.x=nx;a.y=ny}else{a.progress=0;break}
+      chooseEnemyDir(a);
+    }
+  }
   function collect(){
     const c=grid[player.y][player.x];
     if(c==='.'||c==='o'){
@@ -152,7 +176,7 @@
     beep(880,.12,'triangle',.06);
     levelTimer=setTimeout(()=>{levelTimer=null;loadLevel();countdownStart()},650);
   }
-  function loseLife(){if(spawnTimer>0)return;lives--;beep(90,.35,'sawtooth',.08);particles(player.x,player.y,'#ff4fa3',28);if(lives<=0){running=false;finishGame();return}spawnTimer=2.2;player.progress=0;enemies.forEach(e=>{e.x=e.px=e.homeX;e.y=e.py=e.homeY;e.progress=0});}
+  function loseLife(){if(spawnTimer>0)return;lives--;beep(90,.35,'sawtooth',.08);particles(player.x,player.y,'#ff4fa3',28);if(lives<=0){running=false;finishGame();return}spawnTimer=2.2;player.progress=0;player.moving=false;player.stopAfterTile=false;enemies.forEach(e=>{e.x=e.px=e.homeX;e.y=e.py=e.homeY;e.progress=0});}
   function finishGame(){
     clearPendingTimers();
     $('pauseOverlay').classList.add('hidden');
@@ -163,7 +187,7 @@
     beep(55,.7,'sawtooth',.07);
   }
   const sparks=[];function particles(x,y,color,n=8){for(let i=0;i<n;i++)sparks.push({x:x+.5,y:y+.5,vx:(Math.random()-.5)*5,vy:(Math.random()-.5)*5,life:.35+Math.random()*.5,color})}
-  function update(dt){if(!running||paused)return;if(spawnTimer>0){spawnTimer-=dt;return}choosePlayerDir();moveActor(player,dt,true);enemies.forEach(e=>moveActor(e,dt));for(let i=enemies.length-1;i>=0;i--){let e=enemies[i],d=Math.hypot((e.x+e.progress*e.dir.x)-(player.x+player.progress*player.dir.x),(e.y+e.progress*e.dir.y)-(player.y+player.progress*player.dir.y));if(d<.68){if(performance.now()<poweredUntil){score+=200;particles(e.x,e.y,'#ffe76a',18);e.x=e.px=e.homeX;e.y=e.py=e.homeY;e.progress=0;beep(360,.08,'square',.05)}else loseLife()}}
+  function update(dt){if(!running||paused)return;if(spawnTimer>0){spawnTimer-=dt;return}choosePlayerDir();movePlayer(dt);enemies.forEach(e=>moveEnemy(e,dt));for(let i=enemies.length-1;i>=0;i--){let e=enemies[i],d=Math.hypot((e.x+e.progress*e.dir.x)-(player.x+player.progress*player.dir.x),(e.y+e.progress*e.dir.y)-(player.y+player.progress*player.dir.y));if(d<.68){if(performance.now()<poweredUntil){score+=200;particles(e.x,e.y,'#ffe76a',18);e.x=e.px=e.homeX;e.y=e.py=e.homeY;e.progress=0;beep(360,.08,'square',.05)}else loseLife()}}
     for(let i=sparks.length-1;i>=0;i--){let p=sparks[i];p.x+=p.vx*dt;p.y+=p.vy*dt;p.life-=dt;if(p.life<=0)sparks.splice(i,1)}
   }
   function updateHUD(){
@@ -237,15 +261,95 @@
     level=1;
     poweredUntil=0;
     spawnTimer=0;
+    hudCache.score=null;hudCache.lives=null;hudCache.level=null;
     loadLevel();
     countdownStart();
   }
-  function setDir(name){if(dirs[name])player.next=dirs[name]}
-  $('playBtn').onclick=startGame;$('againBtn').onclick=startGame;$('menuBtn').onclick=()=>{clearPendingTimers();running=false;paused=false;$('pauseOverlay').classList.add('hidden');setScreen('start')};$('howBtn').onclick=()=>setScreen('how');$('backBtn').onclick=()=>setScreen('start');$('restartBtn').onclick=startGame;$('pauseBtn').onclick=togglePause;$('resumeBtn').onclick=togglePause;
-  function togglePause(){if(!screens.game.classList.contains('active'))return;paused=!paused;$('pauseOverlay').classList.toggle('hidden',!paused);$('pauseBtn').textContent=paused?'▶':'Ⅱ'}
-  document.querySelectorAll('[data-dir]').forEach(b=>b.addEventListener('pointerdown',e=>{e.preventDefault();setDir(b.dataset.dir)}));
-  document.addEventListener('keydown',e=>{let k={ArrowUp:'up',w:'up',ArrowDown:'down',s:'down',ArrowLeft:'left',a:'left',ArrowRight:'right',d:'right'}[e.key];if(k){e.preventDefault();setDir(k)}if(e.key===' '){e.preventDefault();togglePause()}});
-  let sx=0,sy=0;$('gameWrap').addEventListener('pointerdown',e=>{sx=e.clientX;sy=e.clientY});$('gameWrap').addEventListener('pointerup',e=>{let dx=e.clientX-sx,dy=e.clientY-sy;if(Math.hypot(dx,dy)<18)return;if(Math.abs(dx)>Math.abs(dy))setDir(dx>0?'right':'left');else setDir(dy>0?'down':'up')});
+  function setDir(name,{start=false}={}){
+    if(!dirs[name]||!player)return;
+    player.next=dirs[name];
+    if(start){
+      player.stopAfterTile=false;
+      player.moving=true;
+      choosePlayerDir();
+    }
+  }
+  function stopPlayer(){
+    if(!player)return;
+    if(player.progress>0)player.stopAfterTile=true;
+    else player.moving=false;
+  }
+
+  $('playBtn').onclick=startGame;
+  $('againBtn').onclick=startGame;
+  $('menuBtn').onclick=()=>{clearPendingTimers();running=false;paused=false;$('pauseOverlay').classList.add('hidden');setScreen('start')};
+  $('howBtn').onclick=()=>setScreen('how');
+  $('backBtn').onclick=()=>setScreen('start');
+  $('restartBtn').onclick=startGame;
+  $('pauseBtn').onclick=togglePause;
+  $('resumeBtn').onclick=togglePause;
+
+  function togglePause(){
+    if(!screens.game.classList.contains('active'))return;
+    paused=!paused;
+    $('pauseOverlay').classList.toggle('hidden',!paused);
+    $('pauseBtn').textContent=paused?'▶':'Ⅱ';
+  }
+
+  // Touch buttons: movement starts on press and stops when the finger leaves.
+  let activeTouchButton=null;
+  document.querySelectorAll('[data-dir]').forEach(button=>{
+    const start=e=>{
+      e.preventDefault();
+      activeTouchButton=button;
+      try{button.setPointerCapture(e.pointerId)}catch(_){}
+      setDir(button.dataset.dir,{start:true});
+    };
+    const stop=e=>{
+      if(activeTouchButton===button){
+        activeTouchButton=null;
+        stopPlayer();
+      }
+      try{button.releasePointerCapture(e.pointerId)}catch(_){}
+    };
+    button.addEventListener('pointerdown',start);
+    button.addEventListener('pointerup',stop);
+    button.addEventListener('pointercancel',stop);
+    button.addEventListener('lostpointercapture',()=>{if(activeTouchButton===button){activeTouchButton=null;stopPlayer()}});
+  });
+
+  // Keyboard: hold a key to move; release it to stop cleanly on a tile.
+  const keyMap={ArrowUp:'up',w:'up',W:'up',ArrowDown:'down',s:'down',S:'down',ArrowLeft:'left',a:'left',A:'left',ArrowRight:'right',d:'right',D:'right'};
+  const pressedKeys=new Set();
+  document.addEventListener('keydown',e=>{
+    const dir=keyMap[e.key];
+    if(dir){
+      e.preventDefault();
+      pressedKeys.add(e.key);
+      setDir(dir,{start:true});
+      return;
+    }
+    if(e.key===' '){e.preventDefault();togglePause()}
+  });
+  document.addEventListener('keyup',e=>{
+    if(keyMap[e.key]){
+      pressedKeys.delete(e.key);
+      if(pressedKeys.size===0)stopPlayer();
+    }
+  });
+
+  // Swipe changes direction and starts movement. A new swipe is required to change it again.
+  let sx=0,sy=0,swipeActive=false;
+  $('gameWrap').addEventListener('pointerdown',e=>{sx=e.clientX;sy=e.clientY;swipeActive=true});
+  $('gameWrap').addEventListener('pointerup',e=>{
+    if(!swipeActive)return;
+    swipeActive=false;
+    const dx=e.clientX-sx,dy=e.clientY-sy;
+    if(Math.hypot(dx,dy)<18)return;
+    const dir=Math.abs(dx)>Math.abs(dy)?(dx>0?'right':'left'):(dy>0?'down':'up');
+    setDir(dir,{start:true});
+  });
+  $('gameWrap').addEventListener('pointercancel',()=>{swipeActive=false});
   function syncSound(){let txt=soundOn?'🔊':'🔇';$('soundBtn').textContent=txt;$('soundStart').textContent=`${txt} Som`;safeSet('neonMazeSound',soundOn?'on':'off')}$('soundBtn').onclick=()=>{soundOn=!soundOn;syncSound()};$('soundStart').onclick=()=>{soundOn=!soundOn;syncSound()};syncSound();
   loadLevel();draw();
 })();
