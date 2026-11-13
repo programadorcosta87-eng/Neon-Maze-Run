@@ -75,7 +75,7 @@
   ];
   const safeGet=(key,fallback=null)=>{try{return localStorage.getItem(key)??fallback}catch(e){return fallback}};
   const safeSet=(key,value)=>{try{localStorage.setItem(key,value)}catch(e){}};
-  let countdownTimer=null,levelTimer=null;
+  let countdownTimer=null,levelTimer=null,controlSource=null,activeDirection=null;
   let grid=[],collectiblesLeft=0,player,enemies=[],score=0,lives=3,level=1,running=false,paused=false,poweredUntil=0,last=0,high=Number(safeGet('neonMazeHigh','0'))||0,soundOn=safeGet('neonMazeSound','on')!=='off',spawnTimer=0;
   const dirs={up:{x:0,y:-1},down:{x:0,y:1},left:{x:-1,y:0},right:{x:1,y:0}};
   let audioCtx;
@@ -176,7 +176,7 @@
     beep(880,.12,'triangle',.06);
     levelTimer=setTimeout(()=>{levelTimer=null;loadLevel();countdownStart()},650);
   }
-  function loseLife(){if(spawnTimer>0)return;lives--;beep(90,.35,'sawtooth',.08);particles(player.x,player.y,'#ff4fa3',28);if(lives<=0){running=false;finishGame();return}spawnTimer=2.2;player.progress=0;player.moving=false;player.stopAfterTile=false;enemies.forEach(e=>{e.x=e.px=e.homeX;e.y=e.py=e.homeY;e.progress=0});}
+  function loseLife(){if(spawnTimer>0)return;lives--;beep(90,.35,'sawtooth',.08);particles(player.x,player.y,'#ff4fa3',28);if(lives<=0){running=false;finishGame();return}spawnTimer=2.2;resetControls();player.progress=0;enemies.forEach(e=>{e.x=e.px=e.homeX;e.y=e.py=e.homeY;e.progress=0});}
   function finishGame(){
     clearPendingTimers();
     $('pauseOverlay').classList.add('hidden');
@@ -256,6 +256,7 @@
   }
   function startGame(){
     clearPendingTimers();
+    resetControls();
     score=0;
     lives=3;
     level=1;
@@ -265,8 +266,12 @@
     loadLevel();
     countdownStart();
   }
-  function setDir(name,{start=false}={}){
+  function setDir(name,{start=false,source='program'}={}){
     if(!dirs[name]||!player)return;
+    // Only the active input source can control the current movement.
+    if(controlSource && controlSource!==source)return;
+    controlSource=source;
+    activeDirection=name;
     player.next=dirs[name];
     if(start){
       player.stopAfterTile=false;
@@ -274,15 +279,22 @@
       choosePlayerDir();
     }
   }
-  function stopPlayer(){
-    if(!player)return;
+  function stopPlayer(source='program'){
+    if(!player||controlSource!==source)return;
+    activeDirection=null;
+    controlSource=null;
     if(player.progress>0)player.stopAfterTile=true;
     else player.moving=false;
+  }
+  function resetControls(){
+    controlSource=null;
+    activeDirection=null;
+    if(player){player.moving=false;player.stopAfterTile=false;player.progress=0}
   }
 
   $('playBtn').onclick=startGame;
   $('againBtn').onclick=startGame;
-  $('menuBtn').onclick=()=>{clearPendingTimers();running=false;paused=false;$('pauseOverlay').classList.add('hidden');setScreen('start')};
+  $('menuBtn').onclick=()=>{clearPendingTimers();resetControls();running=false;paused=false;$('pauseOverlay').classList.add('hidden');setScreen('start')};
   $('howBtn').onclick=()=>setScreen('how');
   $('backBtn').onclick=()=>setScreen('start');
   $('restartBtn').onclick=startGame;
@@ -296,26 +308,37 @@
     $('pauseBtn').textContent=paused?'▶':'Ⅱ';
   }
 
-  // Touch buttons: movement starts on press and stops when the finger leaves.
+  // Touch buttons: each physical button controls only its own direction.
   let activeTouchButton=null;
+  let activePointerId=null;
   document.querySelectorAll('[data-dir]').forEach(button=>{
+    const direction=button.dataset.dir;
+    const source='button:'+direction;
     const start=e=>{
       e.preventDefault();
+      e.stopPropagation();
+      // Ignore another button while one button is already being pressed.
+      if(activeTouchButton && activeTouchButton!==button)return;
       activeTouchButton=button;
+      activePointerId=e.pointerId;
       try{button.setPointerCapture(e.pointerId)}catch(_){}
-      setDir(button.dataset.dir,{start:true});
+      setDir(direction,{start:true,source});
     };
     const stop=e=>{
-      if(activeTouchButton===button){
-        activeTouchButton=null;
-        stopPlayer();
-      }
+      e.preventDefault();
+      e.stopPropagation();
+      if(activeTouchButton!==button)return;
+      if(activePointerId!==null && e.pointerId!==activePointerId)return;
+      activeTouchButton=null;
+      activePointerId=null;
+      stopPlayer(source);
       try{button.releasePointerCapture(e.pointerId)}catch(_){}
     };
     button.addEventListener('pointerdown',start);
     button.addEventListener('pointerup',stop);
     button.addEventListener('pointercancel',stop);
-    button.addEventListener('lostpointercapture',()=>{if(activeTouchButton===button){activeTouchButton=null;stopPlayer()}});
+    button.addEventListener('lostpointercapture',()=>stopPlayer(source));
+    button.addEventListener('contextmenu',e=>e.preventDefault());
   });
 
   // Keyboard: hold a key to move; release it to stop cleanly on a tile.
@@ -326,7 +349,7 @@
     if(dir){
       e.preventDefault();
       pressedKeys.add(e.key);
-      setDir(dir,{start:true});
+      setDir(dir,{start:true,source:'keyboard'});
       return;
     }
     if(e.key===' '){e.preventDefault();togglePause()}
@@ -334,22 +357,25 @@
   document.addEventListener('keyup',e=>{
     if(keyMap[e.key]){
       pressedKeys.delete(e.key);
-      if(pressedKeys.size===0)stopPlayer();
+      if(pressedKeys.size===0)stopPlayer('keyboard');
     }
   });
 
   // Swipe changes direction and starts movement. A new swipe is required to change it again.
   let sx=0,sy=0,swipeActive=false;
-  $('gameWrap').addEventListener('pointerdown',e=>{sx=e.clientX;sy=e.clientY;swipeActive=true});
+  $('gameWrap').addEventListener('pointerdown',e=>{
+    if(e.target.closest('[data-dir]'))return;
+    sx=e.clientX;sy=e.clientY;swipeActive=true;
+  });
   $('gameWrap').addEventListener('pointerup',e=>{
     if(!swipeActive)return;
     swipeActive=false;
     const dx=e.clientX-sx,dy=e.clientY-sy;
     if(Math.hypot(dx,dy)<18)return;
     const dir=Math.abs(dx)>Math.abs(dy)?(dx>0?'right':'left'):(dy>0?'down':'up');
-    setDir(dir,{start:true});
+    setDir(dir,{start:true,source:'swipe'});
   });
-  $('gameWrap').addEventListener('pointercancel',()=>{swipeActive=false});
+  $('gameWrap').addEventListener('pointercancel',()=>{swipeActive=false;stopPlayer('swipe')});
   function syncSound(){let txt=soundOn?'🔊':'🔇';$('soundBtn').textContent=txt;$('soundStart').textContent=`${txt} Som`;safeSet('neonMazeSound',soundOn?'on':'off')}$('soundBtn').onclick=()=>{soundOn=!soundOn;syncSound()};$('soundStart').onclick=()=>{soundOn=!soundOn;syncSound()};syncSound();
   loadLevel();draw();
 })();
