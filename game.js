@@ -409,19 +409,20 @@
     ctx.drawImage(mazeLayer,0,0);
     function actorPosition(a){return {x:(a.x+.5+a.progress*a.dir.x)*TILE,y:(a.y+.5+a.progress*a.dir.y)*TILE}}
     function drawPlayer(a){
-      const {x,y}=actorPosition(a),angle=Math.atan2(a.dir.y,a.dir.x),mouth=.22+.12*Math.abs(Math.sin(performance.now()/85));
-      ctx.save();ctx.translate(x,y);ctx.rotate(angle);ctx.shadowColor='#55f6ff';ctx.shadowBlur=17;
-      const radius=8.5;ctx.fillStyle='#55f6ff';ctx.beginPath();ctx.moveTo(0,0);ctx.arc(0,0,radius,mouth,Math.PI*2-mouth);ctx.closePath();ctx.fill();
-      ctx.shadowBlur=0;ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(-1,-3,2.1,0,Math.PI*2);ctx.fill();ctx.restore();
+      const {x,y}=actorPosition(a),t=performance.now()/180,pulse=1+Math.sin(t)*.07;
+      ctx.save();ctx.translate(x,y);ctx.scale(pulse,pulse);ctx.shadowColor='#55f6ff';ctx.shadowBlur=18;
+      const body=ctx.createRadialGradient(-3,-4,1,0,0,10);body.addColorStop(0,'#ffffff');body.addColorStop(.22,'#9cffff');body.addColorStop(.62,'#35d9ff');body.addColorStop(1,'#1768d8');
+      ctx.fillStyle=body;ctx.beginPath();ctx.arc(0,0,8.5,0,Math.PI*2);ctx.fill();ctx.shadowBlur=0;
+      ctx.rotate(t);ctx.strokeStyle='#c9ffff';ctx.lineWidth=1.25;ctx.beginPath();ctx.ellipse(0,0,12,4.2,0,0,Math.PI*2);ctx.stroke();
+      ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(0,0,2.2,0,Math.PI*2);ctx.fill();ctx.restore();
     }
     function drawHunter(a,color){
-      const {x,y}=actorPosition(a),r=8;ctx.save();ctx.translate(x,y);ctx.shadowColor=color;ctx.shadowBlur=13;ctx.fillStyle=color;
-      ctx.beginPath();ctx.moveTo(-r,r*.7);ctx.lineTo(-r,-1);ctx.arc(0,-1,r,Math.PI,0);ctx.lineTo(r,r*.7);
-      for(let i=0;i<3;i++){const px=r-i*r*.66;ctx.quadraticCurveTo(px-r*.25,r*.25,px-r*.5,r*.7)}
-      ctx.closePath();ctx.fill();ctx.shadowBlur=0;
-      const lookX=a.dir.x*1.4,lookY=a.dir.y*1.1;
-      for(const ex of [-3.2,3.2]){ctx.fillStyle='#fff';ctx.beginPath();ctx.ellipse(ex,-1.5,2.8,3.4,0,0,Math.PI*2);ctx.fill();ctx.fillStyle='#10203d';ctx.beginPath();ctx.arc(ex+lookX,-1.2+lookY,1.35,0,Math.PI*2);ctx.fill()}
-      ctx.restore();
+      const {x,y}=actorPosition(a),t=performance.now()/260;
+      ctx.save();ctx.translate(x,y);ctx.rotate(t*(a.mode==='ambush'?-1:1));ctx.shadowColor=color;ctx.shadowBlur=14;ctx.fillStyle=color;
+      ctx.beginPath();for(let i=0;i<6;i++){const angle=Math.PI/3*i-Math.PI/6,px=Math.cos(angle)*8.5,py=Math.sin(angle)*8.5;i?ctx.lineTo(px,py):ctx.moveTo(px,py)}ctx.closePath();ctx.fill();
+      ctx.shadowBlur=0;ctx.fillStyle='#071326';ctx.beginPath();ctx.ellipse(0,0,4.5,2.2,0,0,Math.PI*2);ctx.fill();
+      ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(a.dir.x*2,a.dir.y*1.5,1.5,0,Math.PI*2);ctx.fill();
+      ctx.strokeStyle='#ffffff88';ctx.lineWidth=1;ctx.beginPath();ctx.arc(0,0,11,0,Math.PI*2);ctx.stroke();ctx.restore();
     }
     drawPlayer(player);const powered=performance.now()<poweredUntil;
     for(const e of enemies)drawHunter(e,powered?'#6688ff':e.color);
