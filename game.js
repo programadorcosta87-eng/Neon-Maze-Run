@@ -6,7 +6,9 @@
   const mazeLayer=document.createElement('canvas');
   mazeLayer.width=W; mazeLayer.height=W;
   const mazeCtx=mazeLayer.getContext('2d');
-  const hudCache={score:null,lives:null,level:null};
+  const hudCache={score:null,lives:null,level:null,keys:null};
+  const levelPalettes=[{wall:'#102a52',edge:'#1d63aa',dot:'#8cf7ff',key:'#ffe76a'},{wall:'#24184c',edge:'#8b5cf6',dot:'#c6a7ff',key:'#ffcf5c'},{wall:'#123c3a',edge:'#21b6a2',dot:'#8effd2',key:'#ff8ec7'},{wall:'#40213c',edge:'#e35b9b',dot:'#ffc1e1',key:'#8ff7ff'}];
+  let levelKeys=[],keysCollected=0,keysRequired=0;
   const maps=[
 `################################
 #..............##..............#
@@ -126,18 +128,19 @@
     return map;
   }
   function buildMazeLayer(){
+    const palette=levelPalettes[(level-1)%levelPalettes.length];
     mazeCtx.clearRect(0,0,W,W);
     mazeCtx.fillStyle='#050b17';
     mazeCtx.fillRect(0,0,W,W);
-    mazeCtx.fillStyle='#102a52';
+    mazeCtx.fillStyle=palette.wall;
     for(let y=0;y<ROWS;y++)for(let x=0;x<COLS;x++)if(grid[y][x]==='#')mazeCtx.fillRect(x*TILE,y*TILE,TILE,TILE);
-    mazeCtx.strokeStyle='#1d63aa';
+    mazeCtx.strokeStyle=palette.edge;
     mazeCtx.lineWidth=1;
     for(let y=0;y<ROWS;y++)for(let x=0;x<COLS;x++)if(grid[y][x]==='#')mazeCtx.strokeRect(x*TILE+1,y*TILE+1,TILE-2,TILE-2);
     for(let y=0;y<ROWS;y++)for(let x=0;x<COLS;x++){
       const c=grid[y][x];
       if(c==='.'||c==='o'){
-        mazeCtx.fillStyle=c==='o'?'#ffe76a':'#8cf7ff';
+        mazeCtx.fillStyle=c==='o'?palette.key:palette.dot;
         mazeCtx.beginPath();
         mazeCtx.arc((x+.5)*TILE,(y+.5)*TILE,c==='o'?5:2.5,0,Math.PI*2);
         mazeCtx.fill();
@@ -148,8 +151,43 @@
     mazeCtx.fillStyle='#050b17';
     mazeCtx.fillRect(x*TILE,y*TILE,TILE,TILE);
   }
+  function transformLevelMap(map,variant){
+    if(variant===0)return map;
+    return map.map((row,y)=>row.map((cell,x)=>variant===1?row[COLS-1-x]:variant===2?map[ROWS-1-y][COLS-1-x]:map[ROWS-1-y][x]));
+  }
+  function placeLevelKeys(spawn){
+    keysRequired=Math.min(4,2+Math.floor((level-1)/3));
+    keysCollected=0;
+    levelKeys=[];
+    const dist=new Int16Array(COLS*ROWS);dist.fill(-1);
+    const start=spawn.y*COLS+spawn.x,q=[start];dist[start]=0;
+    for(let i=0;i<q.length;i++){
+      const id=q[i],x=id%COLS,y=Math.floor(id/COLS);
+      for(const d of Object.values(dirs)){
+        const nx=x+d.x,ny=y+d.y,nid=ny*COLS+nx;
+        if(cellOpen(nx,ny)&&dist[nid]===-1){dist[nid]=dist[id]+1;q.push(nid)}
+      }
+    }
+    const chosen=[];
+    for(let n=0;n<keysRequired;n++){
+      let best=null,bestDistance=-1;
+      for(let y=1;y<ROWS-1;y++)for(let x=1;x<COLS-1;x++){
+        const id=y*COLS+x;
+        if(!cellOpen(x,y)||dist[id]<0||dist[id]<3||chosen.some(p=>Math.abs(p.x-x)+Math.abs(p.y-y)<7))continue;
+        const spacing=chosen.length?Math.min(...chosen.map(p=>Math.abs(p.x-x)+Math.abs(p.y-y))):999;
+        const value=dist[id]+spacing*.7;
+        if(value>bestDistance){bestDistance=value;best={x,y}}
+      }
+      if(!best)break;
+      chosen.push(best);
+    }
+    keysRequired=chosen.length;
+    levelKeys=chosen.map((p,index)=>({...p,phase:index*.9}));
+    for(const p of chosen){if(grid[p.y][p.x]==='.'||grid[p.y][p.x]==='o')collectiblesLeft--;grid[p.y][p.x]='k'}
+  }
   function loadLevel(){
-    grid=normalizeMap(maps[(level-1)%maps.length]);
+    const base=normalizeMap(maps[Math.floor((level-1)/4)%maps.length]);
+    grid=transformLevelMap(base,(level-1)%4);
     collectiblesLeft=0;
     for(const row of grid)for(const c of row)if(c==='.'||c==='o')collectiblesLeft++;
     buildMazeLayer();
@@ -162,6 +200,7 @@
     };
     const p=nearestOpen(16,24);
     player={x:p.x,y:p.y,dir:dirs.left,next:dirs.left,px:p.x,py:p.y,progress:0,speed:7.4+difficulty*.10,moving:false,stopAfterTile:false};
+    placeLevelKeys(p);
 
     const makeEnemy=(x,y,dir,color,mode,baseSpeed)=>{
       const pos=nearestOpen(x,y);
@@ -219,6 +258,18 @@
   }
   function collect(){
     const c=grid[player.y][player.x];
+    if(c==='k'){
+      grid[player.y][player.x]=' ';
+      levelKeys=levelKeys.filter(key=>key.x!==player.x||key.y!==player.y);
+      keysCollected++;
+      score+=150;
+      clearCollectible(player.x,player.y);
+      particles(player.x,player.y,levelPalettes[(level-1)%levelPalettes.length].key,16);
+      beep(980,.12,'triangle',.06);
+      updateHUD();
+      if(keysCollected>=keysRequired)nextLevel();
+      return;
+    }
     if(c==='.'||c==='o'){
       grid[player.y][player.x]=' ';
       collectiblesLeft--;
@@ -327,6 +378,7 @@
     for(let i=sparks.length-1;i>=0;i--){let p=sparks[i];p.x+=p.vx*dt;p.y+=p.vy*dt;p.life-=dt;if(p.life<=0)sparks.splice(i,1)}
   }
   function updateHUD(){
+    if(hudCache.keys!==keysCollected){$('keys').textContent=`${keysCollected}/${keysRequired}`;hudCache.keys=keysCollected}
     if(hudCache.score!==score){$('score').textContent=score;hudCache.score=score}
     if(hudCache.lives!==lives){$('lives').textContent='●'.repeat(Math.max(0,lives));hudCache.lives=lives}
     if(hudCache.level!==level){$('level').textContent=level;hudCache.level=level}
@@ -346,6 +398,12 @@
     orb(player,'#55f6ff',8);
     const powered=performance.now()<poweredUntil;
     for(const e of enemies)orb(e,powered?'#4d6dff':e.color,8);
+    for(const key of levelKeys){
+      const x=(key.x+.5)*TILE,y=(key.y+.5)*TILE,pulse=1+Math.sin(performance.now()/180+key.phase)*.12;
+      const color=levelPalettes[(level-1)%levelPalettes.length].key;
+      ctx.save();ctx.translate(x,y);ctx.scale(pulse,pulse);ctx.shadowColor=color;ctx.shadowBlur=15;ctx.strokeStyle=color;ctx.lineWidth=3;ctx.lineCap='round';
+      ctx.beginPath();ctx.arc(-3,-4,5,0,Math.PI*2);ctx.moveTo(1,0);ctx.lineTo(9,8);ctx.lineTo(6,11);ctx.moveTo(5,6);ctx.lineTo(2,9);ctx.stroke();ctx.restore();
+    }
     for(const p of sparks){
       ctx.globalAlpha=Math.max(0,p.life*2);
       ctx.fillStyle=p.color;
@@ -398,7 +456,7 @@
     level=1;
     poweredUntil=0;
     spawnTimer=0;
-    hudCache.score=null;hudCache.lives=null;hudCache.level=null;
+    hudCache.score=null;hudCache.lives=null;hudCache.level=null;hudCache.keys=null;
     loadLevel();
     countdownStart();
   }
