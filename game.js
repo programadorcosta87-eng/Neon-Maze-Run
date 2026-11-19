@@ -87,6 +87,42 @@
     while(map.length<ROWS) map.push(Array(COLS).fill('#'));
     for(let x=0;x<COLS;x++){map[0][x]='#';map[ROWS-1][x]='#'}
     for(let y=0;y<ROWS;y++){map[y][0]='#';map[y][COLS-1]='#'}
+
+    // Garante que todos os corredores e pontos pertençam a uma única região acessível.
+    const flood=()=>{
+      let start=null;
+      for(let y=1;y<ROWS-1&&!start;y++)for(let x=1;x<COLS-1;x++)if(map[y][x]!=='#'){start=[x,y];break}
+      if(!start)return new Set();
+      const q=[start],seen=new Set([start[1]*COLS+start[0]]);
+      for(let i=0;i<q.length;i++){
+        const [x,y]=q[i];
+        for(const [dx,dy] of [[0,-1],[0,1],[-1,0],[1,0]]){
+          const nx=x+dx,ny=y+dy,id=ny*COLS+nx;
+          if(nx>0&&nx<COLS-1&&ny>0&&ny<ROWS-1&&map[ny][nx]!=='#'&&!seen.has(id)){seen.add(id);q.push([nx,ny])}
+        }
+      }
+      return seen;
+    };
+    let reachable=flood();
+    // Liga cada componente isolado ao corredor principal pelo caminho mais curto.
+    for(let y=1;y<ROWS-1;y++)for(let x=1;x<COLS-1;x++){
+      if(map[y][x]==='#'||reachable.has(y*COLS+x))continue;
+      const q=[[x,y]],prev=new Map([[y*COLS+x,-1]]);
+      let end=-1;
+      for(let i=0;i<q.length&&end<0;i++){
+        const [cx,cy]=q[i],id=cy*COLS+cx;
+        if(reachable.has(id)){end=id;break}
+        for(const [dx,dy] of [[0,-1],[0,1],[-1,0],[1,0]]){
+          const nx=cx+dx,ny=cy+dy,nid=ny*COLS+nx;
+          if(nx>0&&nx<COLS-1&&ny>0&&ny<ROWS-1&&!prev.has(nid)){prev.set(nid,id);q.push([nx,ny])}
+        }
+      }
+      if(end>=0){
+        let id=end;
+        while(id!==-1){const px=id%COLS,py=Math.floor(id/COLS);map[py][px]='.';id=prev.get(id)}
+        reachable=flood();
+      }
+    }
     return map;
   }
   function buildMazeLayer(){
@@ -156,29 +192,30 @@
       choosePlayerDir();
     }
   }
+  function recoverEnemyPosition(a){
+    const pos=closestOpenCell(a.x,a.y);
+    if(!pos)return false;
+    a.x=a.px=pos.x;a.y=a.py=pos.y;a.progress=0;
+    return chooseEnemyDir(a,true);
+  }
   function moveEnemy(a,dt){
-    // Escolhe uma rota antes de andar quando está exatamente em uma célula.
-    // Isso elimina o estado em que o Caçador ficava parado contra uma parede.
-    if(a.progress===0 && !cellOpen(a.x+a.dir.x,a.y+a.dir.y))chooseEnemyDir(a,true);
-
+    if(a.progress===0&&!cellOpen(a.x+a.dir.x,a.y+a.dir.y)){
+      if(!chooseEnemyDir(a,true)&&!recoverEnemyPosition(a))return;
+    }
     a.progress+=a.speed*dt;
-    while(a.progress>=1){
+    let guard=0;
+    while(a.progress>=1&&guard++<8){
       a.progress-=1;
       let nx=a.x+a.dir.x,ny=a.y+a.dir.y;
       if(!cellOpen(nx,ny)){
-        chooseEnemyDir(a,true);
-        nx=a.x+a.dir.x; ny=a.y+a.dir.y;
+        if(!chooseEnemyDir(a,true)){a.progress=0;recoverEnemyPosition(a);return}
+        nx=a.x+a.dir.x;ny=a.y+a.dir.y;
       }
-      if(!cellOpen(nx,ny)){
-        // Recuperação de segurança: nunca mantém um inimigo congelado.
-        const fallback=Object.values(dirs).find(d=>cellOpen(a.x+d.x,a.y+d.y));
-        if(!fallback){a.progress=0;return}
-        a.dir=fallback;
-        nx=a.x+a.dir.x; ny=a.y+a.dir.y;
-      }
+      if(!cellOpen(nx,ny)){a.progress=0;recoverEnemyPosition(a);return}
       a.px=a.x;a.py=a.y;a.x=nx;a.y=ny;
-      chooseEnemyDir(a,false);
+      if(!chooseEnemyDir(a,false)&&!recoverEnemyPosition(a))return;
     }
+    if(guard>=8)a.progress=0;
   }
   function collect(){
     const c=grid[player.y][player.x];
@@ -211,31 +248,56 @@
     if(e.mode==='ambush')return {x:player.x+player.dir.x*4,y:player.y+player.dir.y*4};
     return {x:player.x,y:player.y};
   }
+  function closestOpenCell(x,y){
+    x=Math.max(1,Math.min(COLS-2,Math.round(x)));
+    y=Math.max(1,Math.min(ROWS-2,Math.round(y)));
+    if(cellOpen(x,y))return {x,y};
+    for(let r=1;r<Math.max(COLS,ROWS);r++){
+      for(let yy=Math.max(1,y-r);yy<=Math.min(ROWS-2,y+r);yy++){
+        for(let xx=Math.max(1,x-r);xx<=Math.min(COLS-2,x+r);xx++){
+          if(cellOpen(xx,yy))return {x:xx,y:yy};
+        }
+      }
+    }
+    return null;
+  }
+  function buildDistanceField(tx,ty){
+    const target=closestOpenCell(tx,ty);
+    const dist=new Int16Array(COLS*ROWS);dist.fill(-1);
+    if(!target)return dist;
+    const q=[target.y*COLS+target.x];dist[q[0]]=0;
+    for(let i=0;i<q.length;i++){
+      const id=q[i],x=id%COLS,y=Math.floor(id/COLS),next=dist[id]+1;
+      for(const d of Object.values(dirs)){
+        const nx=x+d.x,ny=y+d.y,nid=ny*COLS+nx;
+        if(cellOpen(nx,ny)&&dist[nid]===-1){dist[nid]=next;q.push(nid)}
+      }
+    }
+    return dist;
+  }
   function chooseEnemyDir(e,force=false){
     const all=Object.values(dirs).filter(d=>cellOpen(e.x+d.x,e.y+d.y));
-    if(!all.length)return;
-    const forward=all.filter(d=>d.x!==-e.dir.x||d.y!==-e.dir.y);
-    let opts=forward.length?forward:all;
-    const target=enemyTarget(e);
+    if(!all.length)return false;
 
-    if(performance.now()<poweredUntil){
-      // Sob energia, fogem do jogador em vez de perseguir.
-      opts.sort((a,b)=>Math.hypot(e.x+b.x-player.x,e.y+b.y-player.y)-Math.hypot(e.x+a.x-player.x,e.y+a.y-player.y));
-      e.dir=opts[0];
-      return;
+    const fleeing=performance.now()<poweredUntil;
+    const target=fleeing?{x:player.x,y:player.y}:enemyTarget(e);
+    const field=buildDistanceField(target.x,target.y);
+    let best=[],bestScore=fleeing?-Infinity:Infinity;
+    for(const d of all){
+      const value=field[(e.y+d.y)*COLS+(e.x+d.x)];
+      if(value<0)continue;
+      if((!fleeing&&value<bestScore)||(fleeing&&value>bestScore)){bestScore=value;best=[d]}
+      else if(value===bestScore)best.push(d);
     }
-
-    if(e.mode==='wander' && !force && Math.random()<.30){
-      e.dir=opts[Math.floor(Math.random()*opts.length)];
-      return;
+    // A connected map always provides a route; legal-neighbor fallback prevents a freeze
+    // if a malformed or externally modified map is ever encountered.
+    const options=best.length?best:all;
+    if(e.mode==='wander'&&!fleeing&&!force&&Math.random()<.22){
+      e.dir=options[Math.floor(Math.random()*options.length)];
+    }else{
+      e.dir=options[Math.floor(Math.random()*options.length)];
     }
-
-    opts.sort((a,b)=>{
-      const da=Math.hypot(e.x+a.x-target.x,e.y+a.y-target.y);
-      const db=Math.hypot(e.x+b.x-target.x,e.y+b.y-target.y);
-      return da-db;
-    });
-    e.dir=opts[0];
+    return true;
   }
   function clearPendingTimers(){
     if(countdownTimer){clearInterval(countdownTimer);countdownTimer=null}
@@ -261,7 +323,7 @@
     beep(55,.7,'sawtooth',.07);
   }
   const sparks=[];function particles(x,y,color,n=8){for(let i=0;i<n;i++)sparks.push({x:x+.5,y:y+.5,vx:(Math.random()-.5)*5,vy:(Math.random()-.5)*5,life:.35+Math.random()*.5,color})}
-  function update(dt){if(!running||paused)return;if(spawnTimer>0){spawnTimer-=dt;return}choosePlayerDir();movePlayer(dt);enemies.forEach(e=>moveEnemy(e,dt));for(let i=enemies.length-1;i>=0;i--){let e=enemies[i],d=Math.hypot((e.x+e.progress*e.dir.x)-(player.x+player.progress*player.dir.x),(e.y+e.progress*e.dir.y)-(player.y+player.progress*player.dir.y));if(d<.68){if(performance.now()<poweredUntil){score+=200;particles(e.x,e.y,'#ffe76a',18);e.x=e.px=e.homeX;e.y=e.py=e.homeY;e.progress=0;beep(360,.08,'square',.05)}else loseLife()}}
+  function update(dt){if(!running||paused)return;if(spawnTimer>0){spawnTimer=Math.max(0,spawnTimer-dt);return}choosePlayerDir();movePlayer(dt);enemies.forEach(e=>moveEnemy(e,dt));for(let i=enemies.length-1;i>=0;i--){let e=enemies[i],d=Math.hypot((e.x+e.progress*e.dir.x)-(player.x+player.progress*player.dir.x),(e.y+e.progress*e.dir.y)-(player.y+player.progress*player.dir.y));if(d<.68){if(performance.now()<poweredUntil){score+=200;particles(e.x,e.y,'#ffe76a',18);e.x=e.px=e.homeX;e.y=e.py=e.homeY;e.progress=0;beep(360,.08,'square',.05)}else loseLife()}}
     for(let i=sparks.length-1;i>=0;i--){let p=sparks[i];p.x+=p.vx*dt;p.y+=p.vy*dt;p.life-=dt;if(p.life<=0)sparks.splice(i,1)}
   }
   function updateHUD(){
@@ -297,7 +359,7 @@
     updateHUD();
   }
   function loop(t){
-    const dt=Math.min(.04,(t-last)/1000||0);
+    const dt=Math.min(.033,Math.max(0,(t-last)/1000||0));
     last=t;
     if(!document.hidden){update(dt);draw()}
     requestAnimationFrame(loop);
