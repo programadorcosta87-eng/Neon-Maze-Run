@@ -8,7 +8,7 @@ Jogo de labirinto arcade com visual retrô, fases progressivas e controles para 
 
 O **Neon Maze Run** é um minigame original de labirinto inspirado no estilo dos clássicos jogos arcade, desenvolvido com identidade visual própria e sem utilizar personagens, nomes, mapas ou músicas de outros jogos.
 
-O jogador controla uma esfera luminosa e precisa coletar todos os fragmentos espalhados pelo labirinto enquanto evita os Caçadores. Ao concluir todos os fragmentos, uma nova fase é iniciada com dificuldade progressivamente maior.
+O jogador controla um personagem luminoso e precisa encontrar as chaves de cada labirinto enquanto evita os Caçadores. Os fragmentos espalhados pelo caminho rendem pontos extras; os Núcleos permitem virar o jogo temporariamente. Ao reunir todas as chaves, uma nova fase é iniciada com dificuldade progressivamente maior.
 
 A proposta é oferecer uma experiência leve, divertida e viciante diretamente no navegador, com foco em visual retrô, boa fluidez e jogabilidade simples tanto no desktop quanto no celular.
 
@@ -20,7 +20,9 @@ A proposta é oferecer uma experiência leve, divertida e viciante diretamente n
 * Sistema de pontuação
 * Sistema de vidas
 * Recorde salvo automaticamente no navegador
-* Inimigos com comportamentos diferentes
+* Inimigos com comportamentos diferentes e animações próprias
+* Bônus em sequência ao capturar Caçadores durante o efeito dos Núcleos
+* Feedback visual de pontuação, chaves, vidas e energia
 * Itens especiais que permitem derrotar temporariamente os inimigos
 * Aumento gradual da dificuldade
 * Contagem regressiva antes do início da partida
