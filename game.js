@@ -78,11 +78,21 @@
   const safeGet=(key,fallback=null)=>{try{return localStorage.getItem(key)??fallback}catch(e){return fallback}};
   const safeSet=(key,value)=>{try{localStorage.setItem(key,value)}catch(e){}};
   let countdownTimer=null,levelTimer=null,controlSource=null,activeDirection=null;
-  let grid=[],collectiblesLeft=0,player,enemies=[],score=0,lives=3,level=1,running=false,paused=false,poweredUntil=0,last=0,high=Number(safeGet('neonMazeHigh','0'))||0,soundOn=safeGet('neonMazeSound','on')!=='off',spawnTimer=0;
+  let grid=[],collectiblesLeft=0,player,enemies=[],score=0,lives=3,level=1,running=false,paused=false,poweredUntil=0,last=0,high=Number(safeGet('neonMazeHigh','0'))||0,bestLevel=Math.max(1,Number(safeGet('neonMazeBestLevel','1'))||1),soundOn=safeGet('neonMazeSound','on')!=='off',spawnTimer=0;
   const dirs={up:{x:0,y:-1},down:{x:0,y:1},left:{x:-1,y:0},right:{x:1,y:0}};
   let audioCtx;
   function beep(freq,dur=.07,type='sine',vol=.04){if(!soundOn)return;try{audioCtx??=new (window.AudioContext||window.webkitAudioContext)();const o=audioCtx.createOscillator(),g=audioCtx.createGain();o.type=type;o.frequency.value=freq;g.gain.value=vol;o.connect(g).connect(audioCtx.destination);o.start();g.gain.exponentialRampToValueAtTime(.001,audioCtx.currentTime+dur);o.stop(audioCtx.currentTime+dur)}catch(e){}}
-  function setScreen(name){Object.values(screens).forEach(s=>s.classList.remove('active'));screens[name].classList.add('active')}
+  function setScreen(name){Object.values(screens).forEach(s=>s.classList.remove('active'));screens[name].classList.add('active');if(name==='start')updateRecords()}
+  function saveProgress(){
+    if(score>high){high=score;safeSet('neonMazeHigh',String(high))}
+    if(level>bestLevel){bestLevel=level;safeSet('neonMazeBestLevel',String(bestLevel))}
+    updateRecords();
+  }
+  function updateRecords(){
+    const scoreEl=$('menuHighScore'),levelEl=$('menuBestLevel');
+    if(scoreEl)scoreEl.textContent=high.toLocaleString('pt-BR');
+    if(levelEl)levelEl.textContent=bestLevel.toLocaleString('pt-BR');
+  }
   function normalizeMap(str){
     const lines=str.split('\n');
     const map=lines.slice(0,ROWS).map(x=>x.padEnd(COLS,'#').slice(0,COLS).split(''));
@@ -360,6 +370,7 @@
     clearPendingTimers();
     score+=500;
     level++;
+    saveProgress();
     beep(880,.12,'triangle',.06);
     levelTimer=setTimeout(()=>{levelTimer=null;loadLevel();countdownStart()},650);
   }
@@ -367,7 +378,7 @@
   function finishGame(){
     clearPendingTimers();
     $('pauseOverlay').classList.add('hidden');
-    if(score>high){high=score;safeSet('neonMazeHigh',high)}
+    saveProgress();
     $('finalScore').textContent=score;
     $('highScore').textContent=high;
     setScreen('over');
@@ -378,6 +389,7 @@
     for(let i=sparks.length-1;i>=0;i--){let p=sparks[i];p.x+=p.vx*dt;p.y+=p.vy*dt;p.life-=dt;if(p.life<=0)sparks.splice(i,1)}
   }
   function updateHUD(){
+    saveProgress();
     if(hudCache.keys!==keysCollected){$('keys').textContent=`${keysCollected}/${keysRequired}`;hudCache.keys=keysCollected}
     if(hudCache.score!==score){$('score').textContent=score;hudCache.score=score}
     if(hudCache.lives!==lives){$('lives').textContent='●'.repeat(Math.max(0,lives));hudCache.lives=lives}
@@ -571,5 +583,5 @@
   });
   $('gameWrap').addEventListener('pointercancel',()=>{swipeActive=false;stopPlayer('swipe')});
   function syncSound(){let txt=soundOn?'🔊':'🔇';$('soundBtn').textContent=txt;$('soundStart').textContent=`${txt} Som`;safeSet('neonMazeSound',soundOn?'on':'off')}$('soundBtn').onclick=()=>{soundOn=!soundOn;syncSound()};$('soundStart').onclick=()=>{soundOn=!soundOn;syncSound()};syncSound();
-  loadLevel();draw();
+  loadLevel();updateRecords();draw();
 })();
