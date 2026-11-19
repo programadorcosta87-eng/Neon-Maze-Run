@@ -113,6 +113,20 @@ Também é possível utilizar qualquer servidor HTTP estático para executar o p
 
 ---
 
+## 🔒 Privacidade e segurança
+
+* O jogo não possui cadastro, login, formulários ou campos para dados pessoais.
+* O código do jogo não envia pontuação, recordes, controles ou dados pessoais para servidores ou serviços de análise.
+* Não há integração intencional com publicidade, pixels, analytics ou rastreadores de terceiros.
+* O navegador armazena somente a melhor pontuação, a melhor fase e a preferência de som usando `localStorage` no próprio dispositivo.
+* O jogo não solicita acesso à câmera, microfone, localização, contatos ou arquivos do dispositivo.
+* A política de segurança de conteúdo (CSP) restringe scripts, estilos, conexões e outros recursos à própria origem do site.
+* O arquivo `_headers` aplica cabeçalhos adicionais de segurança quando servido pela Netlify.
+
+**Nota:** a plataforma de hospedagem e a infraestrutura do navegador podem processar dados técnicos de conexão e acesso conforme suas próprias políticas. Isso é separado da coleta feita pelo código do jogo. Para apagar os recordes, limpe os dados do site no navegador.
+
+---
+
 ## ⚡ Desempenho
 
 O jogo utiliza **Canvas** e `requestAnimationFrame()` para a renderização e animação.
